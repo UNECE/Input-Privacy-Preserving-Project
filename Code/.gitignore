@@ -163,4 +163,3 @@ cython_debug/
 LINKER/*.txt
 ISTAT/*.txt
 BI/*.txt
-PUBLIC_KEYS/*
