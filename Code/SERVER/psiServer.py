@@ -3,7 +3,6 @@
 import random
 import sys
 from time import time
-#import gmpy
 import gmpy2
 import hashlib
 from flask import Flask

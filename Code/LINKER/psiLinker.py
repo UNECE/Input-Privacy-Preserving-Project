@@ -87,7 +87,7 @@ def hello_world():
             print(query_columns)
             print("----#####---------")
 
-            # read BI and ISTAT datafiles from disk to seperate dataframes and Linking Key column names.
+            # read P1 and P2 datafiles from disk to seperate dataframes and Linking Key column names.
             # remember, all data is encrypted (columnames & datavalues)
             print("Party 1 data")
             dfP1, idKeyP1 = mkdf('LinkerP1.txt')
@@ -95,8 +95,7 @@ def hello_world():
             dfP2, idkeyP2 = mkdf('LinkerP2.txt')
 
             # create one joined dataframe from both dataframes, join on Key columns
-            DataIntersection = pd.merge(
-                dfP2, dfP1, how='inner', left_on=idKeyP1, right_on=idkeyP2)
+            DataIntersection = pd.merge(dfP2, dfP1, how='inner', left_on=idKeyP1, right_on=idkeyP2)
             print(DataIntersection)
             print("server: query mode ----")
 

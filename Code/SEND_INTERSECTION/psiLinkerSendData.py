@@ -51,7 +51,7 @@ df_i = pd.read_csv(intersection, sep=";")
 column_names = df.columns.values.tolist()
 DataIntersection = pd.merge(df, df_i, how='inner',
                             left_on='IDKEY', right_on='IDKEY')[column_names]
-df = DataIntersection
+df = DataIntersection.astype(str)
 
 # AES encrypt rows
 dfcrypt = df.applymap(aes.encrypt)

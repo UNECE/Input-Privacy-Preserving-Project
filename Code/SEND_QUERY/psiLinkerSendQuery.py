@@ -1,11 +1,11 @@
 #! /usr/bin/python
-from AES.aes import AESCipher
 import urllib
 import urllib.request
 import sys
 import os
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(CURRENT_DIR))
+from AES.aes import AESCipher
 
 print(sys.argv)
 if len(sys.argv) == 6:

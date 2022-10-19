@@ -164,3 +164,7 @@ LINKER/*.txt
 ISTAT/*.txt
 BI/*.txt
 PUBLIC_KEYS/*
+CBS
+STATCAN
+*.txt
+.DS_Store
