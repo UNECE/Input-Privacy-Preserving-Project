@@ -1,1 +1,0 @@
-"C:\Users\abel.dasylva\AppData\Local\Programs\Python\Python310\python.exe" ../SEND_QUERY/psiLinkerSendQuery.py 127.0.0.1 5002 "exp_size" P2 3425245235
