@@ -68,13 +68,15 @@ STATCAN estimates the error rates when linking with the linkage key. However no 
 Obtain the following output in the CBS client window where `b_count` is the blocking estimate, `l_count` is the estimate based on the linkage key. It shows three tables. The first table gives the `b_count` for each cross-classification of the query variables. The second table gives the `l_count` for each cross-classification of the query variables. The third table is based on merging the first two tables. It also includes the corrected count based on the estimated error rates.
 
 |     | exp_size |  pref_kode |  b_count |
+|-----|----------|------------|----------|
 |0    | small    |  100       |  139049  |
 |1    | small    |  300       |  46795   |
 |2    | large    |  100       |  159037  |
 |3    | large    |  300       |  52261   |
-|-----|----------|------------|----------|
+
 
 |    | exp_size  | pref_kode  | l_count |
+|----|-----------|------------|---------|
 |0   | small     | 100        | 28194   |
 |1   | small     | 300        | 9612    |
 |2   | large     | 100        | 31595   |
