@@ -82,28 +82,35 @@ Obtain the following output in the CBS client window where `b_count` is the bloc
 |2   | large     | 100        | 31595   |
 |3   | large     | 300        | 10416   |
 
-  exp_size   pref_kode   b_count  l_count  corrected_count
-0     small         100   139049    28194     35326.844527
-1     small         300    46795     9612     12043.755041
-2     large         100   159037    31595     39588.268876
-3     large         300    52261    10416     13051.160267
+
+|    | exp_size  | pref_kode |  b_count | l_count | corrected_count |
+|----|-----------|-----------|----------|---------|-----------------|
+|0   | small     | 100       |  139049  | 28194   | 35326.844527    |
+|1   | small     | 300       |  46795   | 9612    | 12043.755041    |
+|2   | large     | 100       |  159037  | 31595   | 39588.268876    |
+|3   | large     | 300       |  52261   | 10416   | 13051.160267    |
 
 When using the samples `cbs_exp_data_fuzzy_sample.txt` and `statcan_imp_data_sample.txt`, obtain the following output in the CBS client window.
 
-  exp_size   pref_kode   b_count
-0     small         100    68677
-1     small         300    22951
-2     large         100    77687
-3     large         300    25910
+|   | exp_size |  pref_kode |  b_count |
+|---|----------|------------|----------|
+|0  | small    |  100       |  68677   |
+|1  | small    |  300       |  22951   |
+|2  | large    |  100       |  77687   |
+|3  | large    |  300       |  25910   |
 
-  exp_size   pref_kode   l_count
-0     small         100    14013
-1     small         300     4649
-2     large         100    15377
-3     large         300     5185
 
-  exp_size   pref_kode   b_count  l_count  corrected_count
-0     small         100    68677    14013     17345.776840
-1     small         300    22951     4649      5754.693251
-2     large         100    77687    15377     19034.183290
-3     large         300    25910     5185      6418.172619
+|   | exp_size |  pref_kode | l_count |
+|---|----------|------------|---------|
+|0  | small    |  100       | 14013   |
+|1  | small    |  300       | 4649    |
+|2  | large    |  100       | 15377   |
+|3  | large    |  300       | 5185    |
+
+
+|   | exp_size |  pref_kode | b_count | l_count | corrected_count |
+|---|----------|------------|---------|---------|-----------------|
+|0  | small    |  100       | 68677   | 14013   | 17345.776840    |
+|1  | small    |  300       | 22951   | 4649    | 5754.693251     |
+|2  | large    |  100       | 77687   | 15377   | 19034.183290    |
+|3  | large    |  300       | 25910   | 5185    | 6418.172619     |
