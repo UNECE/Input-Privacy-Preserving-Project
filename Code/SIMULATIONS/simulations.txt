@@ -1,0 +1,536 @@
+
+#--------------------------------------------------------#
+# Program used to generate the results
+# shown in the UNECE IPP final report.
+# To run with R.
+#--------------------------------------------------------#
+
+library(PPRL)
+library(lubridate)
+
+options(warn=-1)
+
+#--------------------------------------------------------#
+# Error model
+#--------------------------------------------------------#
+
+#======================================================#
+# Compute the log-likelihood
+# alpha_p_params=(alpha_2*(1-p_2),...,alpha_G*(1-p_G),
+#           alpha_1*p_1,...,alpha_G*p_G)
+# lambda_params=(lambda_1,...,lambda_G)
+#------------------------------------------------------#
+
+ll_func<-function(all_params,in_freq_mat,in_num_classes,clip_option,clip_threshold){
+  epsilon = 1e-12
+  if(in_num_classes==1){
+    p<-all_params[1]
+    lambdas<-all_params[2]
+    c_params<-c(1-p,p,lambdas)
+  }
+  else {
+    alphas<-c(1-sum(all_params[1:(in_num_classes-1)]),all_params[1:(in_num_classes-1)])
+    p<-all_params[in_num_classes]
+    lambdas<-all_params[(in_num_classes+1):(2*in_num_classes)]
+    c_params<-c((1-p)*alphas,p*alphas,lambdas)
+  }
+  
+  in_params<-matrix(c_params,in_num_classes,3)
+  
+  positive_n_i<-in_freq_mat[1,(in_freq_mat[1,]>0)]
+  positive_n_i_minus_one<-positive_n_i-rep(1,length(positive_n_i))
+  
+  for(g in c(1:in_num_classes)){
+    
+    alpha_q_g<-in_params[g,1]
+    alpha_p_g<-in_params[g,2]
+    lambda_g<-in_params[g,3]
+    
+    if(g==1){
+      like_n_i_eq_0<-alpha_q_g*exp(-lambda_g)
+      like_n_i_gt_0<-alpha_q_g*dpois(positive_n_i,lambda_g)
+      clip_threshold_cdf<-alpha_q_g*(1-ppois(clip_threshold-1,lambda_g))
+    }
+    else {
+      like_n_i_eq_0<-like_n_i_eq_0+alpha_q_g*exp(-lambda_g)
+      like_n_i_gt_0<-like_n_i_gt_0+alpha_q_g*dpois(positive_n_i,lambda_g)+epsilon
+      clip_threshold_cdf<-clip_threshold_cdf+alpha_q_g*(1-ppois(clip_threshold-1,lambda_g))
+    }
+    like_n_i_gt_0<-like_n_i_gt_0+alpha_p_g*dpois(positive_n_i_minus_one,lambda_g)+epsilon
+    clip_threshold_cdf<-clip_threshold_cdf+alpha_p_g*(1-ppois(clip_threshold-2,lambda_g))+epsilon
+  }
+  
+  num_positive_n_i<-length(positive_n_i)
+  if(clip_option==1){
+    like_n_i_gt_0<-(positive_n_i<clip_threshold)*like_n_i_gt_0+(positive_n_i>=clip_threshold)*rep(clip_threshold_cdf,num_positive_n_i)  
+  } 
+  
+  loglike<-0
+  
+  if(sum(in_freq_mat[2,(in_freq_mat[1,]==0)])>0){
+    loglike<-in_freq_mat[2,(in_freq_mat[1,]==0)]*log(like_n_i_eq_0)
+  }
+  
+  if(sum(in_freq_mat[2,(in_freq_mat[1,]>0)])>0){
+    loglike<-loglike+sum(in_freq_mat[2,(in_freq_mat[1,]>0)]*log(like_n_i_gt_0))
+  }
+  
+  return(loglike)
+}
+
+#================================================#
+# Maximize the log-likelihood
+#------------------------------------------------#
+
+max_loglike_func_2<-function(init_params,in_freq_mat,in_num_classes, clip_option, clip_threshold){
+  
+  #-----------------------#
+  # Constraints
+  #-----------------------#
+  
+  if(in_num_classes>1){
+    pad_alpha<-matrix(rep(0,in_num_classes*(in_num_classes+1)),in_num_classes,in_num_classes+1)
+    ui_alpha<-cbind(rbind(diag(rep(1,in_num_classes-1)),rep(-1,in_num_classes-1)),pad_alpha)
+    ci_alpha<-matrix(c(rep(0,in_num_classes-1),-1.0),in_num_classes,1)
+    
+    pad_p_1<-matrix(rep(0,2*(in_num_classes-1)),2,in_num_classes-1)
+    pad_p_2<-matrix(rep(0,2*in_num_classes),2,in_num_classes)
+    ui_p<-cbind(pad_p_1,matrix(c(1,-1),2,1),pad_p_2)
+    ci_p<-matrix(c(0,-1),2,1)
+    
+    pad_lambda<-matrix(rep(0,in_num_classes*in_num_classes),in_num_classes,in_num_classes)
+    ui_lambda<-cbind(pad_lambda,diag(rep(1,in_num_classes)))
+    ci_lambda<-matrix(rep(0,in_num_classes),in_num_classes,1)
+    
+    ui<-rbind(ui_alpha,ui_p,ui_lambda)
+    ci<-rbind(ci_alpha,ci_p,ci_lambda)
+  }
+  else {
+    pad_p<-matrix(rep(0,2*in_num_classes),2,in_num_classes)
+    ui_p<-cbind(matrix(c(1,-1),2,1),pad_p)
+    ci_p<-matrix(c(0,-1),2,1)
+    
+    pad_lambda<-matrix(rep(0,in_num_classes),in_num_classes,1)
+    ui_lambda<-cbind(pad_lambda,diag(rep(1,in_num_classes)))
+    ci_lambda<-matrix(rep(0,in_num_classes),in_num_classes,1)
+    
+    ui<-rbind(ui_p,ui_lambda)
+    ci<-rbind(ci_p,ci_lambda)
+  }
+  
+  #-----------------------#
+  # Call constrOptim()
+  #-----------------------#
+  result<-constrOptim(init_params, ll_func, grad=NULL, ui, ci, in_freq_mat=in_freq_mat, in_num_classes=in_num_classes, clip_option=clip_option, clip_threshold=clip_threshold, method=c("Nelder-Mead"), control=list(fnscale=-1), outer.eps=1e-8)
+  mles<-result$par
+  convergence<-result$convergence
+  
+  if(in_num_classes==1){
+    alphas<-1
+    ps<-mles[1]
+    lambdas<-mles[2] 
+  }
+  else {
+    alphas<-c(1-sum(mles[1:(in_num_classes-1)]),mles[1:(in_num_classes-1)])
+    ps<-mles[in_num_classes]
+    lambdas<-mles[(in_num_classes+1):(2*in_num_classes)]
+  }
+  
+  aic<-2*in_num_classes-2*result$value
+  
+  return(list(alphas=alphas, ps=ps, lambdas=lambdas,convergence=convergence,aic=aic))
+}
+
+#========================================#
+# MLE where G is based on the minimum
+# AIC
+#----------------------------------------#
+
+mle_aic<-function(ni_freqs){
+  
+  #========================================#
+  # Estimation Blakely-Salmond
+  #----------------------------------------#
+  
+  rho_1<-sum((ni_freqs[1,]==1)*(ni_freqs[2,]))/sum((ni_freqs[1,]==0)*(ni_freqs[2,]))
+  rho_2<-sum((ni_freqs[1,]==2)*(ni_freqs[2,]))/sum((ni_freqs[1,]==0)*(ni_freqs[2,]))
+  delta<-rho_1^2-2*rho_2
+  
+  if(!is.na(delta) & delta>=0){
+    overall_lambda<-rho_1-sqrt(delta)
+    overall_p<-sqrt(delta)/(1+sqrt(delta))
+    recall<-overall_p
+    precision<-overall_p/(overall_p+overall_lambda)
+    bs_p<-overall_p
+    bs_lambda<-overall_lambda
+  } else {
+    recall<-NA
+    precision<-NA
+  }
+
+  
+  #========================================#
+  # Estimation neighbour
+  #----------------------------------------#
+  
+  max_lambda<-1.0
+  num_classes<-1
+  previous_aic<-Inf
+  
+  aic_met<-0
+  
+  while(num_classes<=2 | aic_met==0){
+   
+      if(num_classes==1){
+        init_params<-c(1/2,max_lambda/2)
+      }
+      else {
+        init_params<-c(rep(1,(num_classes-1))/num_classes,1/2,(max_lambda/(1+num_classes))*c(1:num_classes))
+      }
+    
+    result<-max_loglike_func_2(init_params=init_params,in_freq_mat=ni_freqs,in_num_classes=num_classes, clip_option=1, clip_threshold=10)
+    convergence_status<-result$convergence
+    aic<-result$aic
+    
+    overall_p<-sum(result$alphas*result$ps)
+    overall_lambda<-sum(result$alphas*result$lambdas)
+    
+    recall<-overall_p
+    precision<-overall_p/(overall_p+overall_lambda)
+    
+    if(aic_met==0 & aic>previous_aic){
+      aic_met<-1
+    }
+    else {
+      previous_aic<-aic
+      previous_recall<-recall
+      previous_precision<-precision
+      previous_convergence_status<-convergence_status
+    }
+    
+    num_classes<-num_classes+1
+  }
+  
+  results<-list(overall_p=overall_p,overall_lambda=overall_lambda,recall=recall,precision=precision,convergence=convergence_status,result=result,num_classes=num_classes-1)
+  return(results)
+}
+
+#--------------------------------------------------------#
+# Parameters
+#--------------------------------------------------------#
+
+error_proba = 0.2
+chunk_size   = 100
+total_records = 100000
+num_chunks    = 100
+nrow_1 = 75
+nrow_2 = 25
+sim_threshold  = c(9:7)/10
+num_thresholds = 3
+
+# value_type = 0 to estimate the number of transactions
+# value_type = 1 to estimate the total value of transactions
+value_type = 0
+value_threshold = 500000
+
+# link_type = 0 for exact comparison
+# link_type = 1 for approximate comparison with Bloom 
+link_type = 0
+
+#flush.console()
+#--------------------------------------------------------#
+# Break the data in chunks
+#--------------------------------------------------------#
+
+# x = ymd_hms("2009-08-03 00:00:00")
+# x = format(strptime("26-Aug-22", format = "%d-%b-%y"),"%y-%m-%d")
+# y = floor_date(x,unit)
+# num_sec = 80*24*3600
+# unit=paste(num_sec,'s',sep='')
+
+idkey = c(1:total_records)
+
+all_stc_data = read.csv('statcan imp data.csv')
+date = dmy(all_stc_data$date)
+all_stc_data = cbind(idkey,all_stc_data[,-c(3)],date)
+all_stc_data_1 = all_stc_data[(all_stc_data$pref_kode==100),]
+all_stc_data_2 = all_stc_data[(all_stc_data$pref_kode==300),]
+
+all_cbs_data = read.csv('cbs exp data FUZZY.csv')
+error_indicator = (runif(total_records)<error_proba)
+dmy_date = dmy(all_cbs_data$date)
+dmy_date_correct = dmy(all_cbs_data$date_correct)
+
+floor_value = floor(all_cbs_data$value)
+floor_value_correct = floor(all_cbs_data$value_correct)
+
+date = as.Date(c())
+value = c()
+for(r in idkey){
+ if(error_indicator[r]) {
+  date  = c(date,dmy_date[r])
+  value  = c(value,floor_value[r])
+ }
+ else {
+  date = c(date,dmy_date_correct[r])
+  value  = c(value,floor_value_correct[r])
+ }
+}
+
+hs6 = all_cbs_data$hs6_correct
+
+all_cbs_data = cbind(idkey,all_cbs_data[,-c(1,2,3,6,7,8)],hs6,value,date)
+
+flush.console()
+print('Read the files')
+
+#--------------------------------------------------------#
+# Main loop
+#--------------------------------------------------------#
+
+chunk_id = c() 
+stat_desc  = c()
+stat_value = c()
+
+for(chunk_number in c(1:num_chunks)){
+
+print(paste('Chunk id=',chunk_number))
+
+start_row_1 = (chunk_number - 1)*nrow_1+1
+start_row_2 = (chunk_number - 1)*nrow_2+1
+
+stc_data_chunk_1 = all_stc_data_1[c(start_row_1:(start_row_1+nrow_1-1)),]
+stc_data_chunk_2 = all_stc_data_2[c(start_row_2:(start_row_2+nrow_2-1)),]
+stc_data_chunk = rbind(stc_data_chunk_1,stc_data_chunk_2)
+
+idkey_1 = stc_data_chunk_1$idkey
+idkey_2 = stc_data_chunk_2$idkey
+
+cbs_data_chunk_1 = all_cbs_data[(all_cbs_data$idkey %in% idkey_1),]
+cbs_data_chunk_2 = all_cbs_data[(all_cbs_data$idkey %in% idkey_2),]
+cbs_data_chunk = rbind(cbs_data_chunk_1,cbs_data_chunk_2)
+
+#--------------------------------------------------------#
+# The CBS data
+#--------------------------------------------------------#
+
+if(link_type){
+ rlbf = CreateRecordLevelBF(ID = cbs_data_chunk$idkey, data = cbs_data_chunk[, c(2,4,6,5)], lenRLBF = 1000, k = 20,
+        padding = c(1, 1, 1, 1), qgram = c(2, 2, 2, 2), lenBloom = 500, password = c("(H]$6Uh*-Z204q", "lkjg", "klh", "KJHkälk5"),
+        method = "StaticUniform")
+ bf   = rlbf$RLBF
+}
+else {
+ bf=paste(cbs_data_chunk$exp_id,cbs_data_chunk$hs6,cbs_data_chunk$date,cbs_data_chunk$value,sep='')
+}
+
+date     = cbs_data_chunk$date
+if(value_type){
+ value    = cbs_data_chunk$value
+} else {
+ value = (cbs_data_chunk$value>=value_threshold)
+}
+
+exp_size     = cbs_data_chunk$exp_size
+blocking_key = paste(cbs_data_chunk$exp_id,cbs_data_chunk$hs6,sep='')
+id           = cbs_data_chunk$idkey
+
+cbs_exp_data = data.frame(id,bf,date,value,exp_size,blocking_key)
+
+#print('Step 1')
+
+#--------------------------------------------------------#
+# The StatCan data
+#--------------------------------------------------------#
+
+if(link_type){
+ rlbf = CreateRecordLevelBF(ID = stc_data_chunk$idkey, data = stc_data_chunk[, c(6,3,8,4)], lenRLBF = 1000, k = 20,
+        padding = c(1, 1, 1, 1), qgram = c(2, 2, 2, 2), lenBloom = 500, password = c("(H]$6Uh*-Z204q", "lkjg", "klh", "KJHkälk5"),
+        method = "StaticUniform")
+ bf = rlbf$RLBF
+}
+else {
+ bf=paste(stc_data_chunk$exp_id,stc_data_chunk$hs6,stc_data_chunk$date,stc_data_chunk$value,sep='')
+}
+
+date  = stc_data_chunk$date
+if(value_type){
+ value    = stc_data_chunk$value
+} else {
+ value = (stc_data_chunk$value>=value_threshold)
+}
+pref_kode    = stc_data_chunk$pref_kode
+blocking_key = paste(cbs_data_chunk$exp_id,cbs_data_chunk$hs6,sep='')
+id           = stc_data_chunk$idkey
+
+statcan_imp_data = data.frame(id,bf,date,value,pref_kode,blocking_key)
+
+#print('Step 2')
+
+#--------------------------------------------------------#
+# Compare the Bloom filters
+#--------------------------------------------------------#
+
+pref_kode = c()
+exp_size  = c()
+date = c()
+value = c()
+dice_sim = c()
+id_1 = c()
+id_2 = c()
+blocking_criterion = c()
+det_link = c()
+
+for(i in c(1:chunk_size)){
+ for(j in c(1:chunk_size)){
+  id_1 = c(id_1,cbs_exp_data$id[i])
+  id_2 = c(id_2,statcan_imp_data$id[j])
+  pref_kode = c(pref_kode,statcan_imp_data$pref_kode[j])
+  exp_size = c(exp_size,cbs_exp_data$exp_size[i])
+  date = c(date,cbs_exp_data$date[i])
+  value = c(value,cbs_exp_data$value[i])
+
+  if(link_type){
+   bf_1 = strtoi(unlist(strsplit(cbs_exp_data$bf[i],'')))
+   bf_2 = strtoi(unlist(strsplit(statcan_imp_data$bf[j],'')))
+   dice_sim = c(dice_sim,2*sum(bf_1*bf_2)/(sum(bf_1)+sum(bf_2)))
+   det_link = c(det_link,NA)
+  } else {
+   dice_sim = c(dice_sim,NA)
+   det_link = c(det_link, (cbs_exp_data$bf[i]==statcan_imp_data$bf[j]))
+  }
+
+  blocking_criterion = c(blocking_criterion,(cbs_exp_data$blocking_key[i]==statcan_imp_data$blocking_key[j]))
+ }
+}
+
+pairs = data.frame(id_1,id_2,exp_size,date,value,pref_kode,dice_sim,blocking_criterion,det_link)
+
+#print('Step 3')
+
+#--------------------------------------------#
+# Actual totals
+#--------------------------------------------#
+
+for(code in c(100,300)){
+ for(firm_size in c("small","large")){
+  actual_total = sum(pairs[(pairs$id_1==pairs$id_2 & pairs$pref_kode==code & pairs$exp_size==firm_size),]$value)
+
+  chunk_id   = c(chunk_id,chunk_number) 
+  stat_desc  = c(stat_desc,paste('actual total for exp_size=',firm_size,'and pref_kode=',code))
+  stat_value = c(stat_value,actual_total)
+ }
+}
+
+#print('Step 4')
+
+#--------------------------------------------#
+# Link based on the Dice similarity:
+#
+# -Calculate the actual error rates
+# -Estimate the errors with the model
+# -Calculate the actual total
+# -Calculate the naive total estimate
+# -Calculate the corrected total estimate
+#--------------------------------------------#
+
+if(link_type==0)  num_thresholds = 1
+
+for(t in c(1:num_thresholds)){
+ if(link_type) link_status = pairs$blocking_criterion*(pairs$dice_sim >= sim_threshold[t])
+ else link_status = pairs$det_link
+ matched_status = (pairs$id_1==pairs$id_2)
+
+ #--------------------#
+ # Actual error rates
+
+ tp = sum(link_status*matched_status)
+ fp = sum(link_status*(1-matched_status))
+ actual_recall    = tp/chunk_size
+ actual_precision = tp/(tp+fp)
+ actual_fpr = fp/(chunk_size*(chunk_size-1))
+
+ chunk_id   = c(chunk_id,chunk_number) 
+ stat_desc  = c(stat_desc,paste('actual recall for Dice with threshold=',sim_threshold[t]))
+ stat_value = c(stat_value,actual_recall)
+
+ chunk_id   = c(chunk_id,chunk_number) 
+ stat_desc  = c(stat_desc,paste('actual precision for Dice with threshold=',sim_threshold[t]))
+ stat_value = c(stat_value,actual_precision)
+
+ chunk_id   = c(chunk_id,chunk_number) 
+ stat_desc  = c(stat_desc,paste('actual fpr for Dice with threshold=',sim_threshold[t]))
+ stat_value = c(stat_value,actual_fpr)
+
+ #print('Step 5')
+
+ #-----------------------#
+ # Estimated error rates
+
+ all_possible_nis = rbind(c(0:chunk_size),rep(0,chunk_size+1))
+ for(i in c(1:chunk_size)){
+  current_id  = cbs_exp_data$id[i]
+  if(link_type) current_n_i = sum(pairs[(pairs$id_1==current_id),]$blocking_criterion*(pairs[(pairs$id_1==current_id),]$dice_sim >= sim_threshold[t]))
+  else current_n_i = sum(pairs[(pairs$id_1==current_id),]$det_link)
+  all_possible_nis[2,current_n_i+1] = all_possible_nis[2,current_n_i+1]+1
+ }
+
+ #print(list(all_possible_nis))
+ ni_freqs = all_possible_nis[,(all_possible_nis[2,]>0)]
+
+ #print(list(ni_freqs=ni_freqs))
+
+ estimated_error_rates = mle_aic(ni_freqs)
+
+ est_recall         = estimated_error_rates$recall
+ est_precision      = estimated_error_rates$precision
+ est_fpr = (estimated_error_rates$overall_lambda)/(chunk_size-1)
+ #print(list(ni_freqs=ni_freqs,est_recall=est_recall,est_precision=est_precision,est_fpr=est_fpr))
+
+ chunk_id   = c(chunk_id,chunk_number) 
+ stat_desc  = c(stat_desc,paste('estimated recall for Dice with threshold=',sim_threshold[t]))
+ stat_value = c(stat_value,actual_recall)
+
+ chunk_id   = c(chunk_id,chunk_number) 
+ stat_desc  = c(stat_desc,paste('estimated precision for Dice with threshold=',sim_threshold[t]))
+ stat_value = c(stat_value,actual_precision)
+
+ chunk_id   = c(chunk_id,chunk_number) 
+ stat_desc  = c(stat_desc,paste('estimated fpr for Dice with threshold=',sim_threshold[t]))
+ stat_value = c(stat_value,actual_fpr)
+
+ #print('Step 6')
+
+ #-----------------------#
+ # Naive and corrected
+ # totals
+
+ for(code in c(100,300)){
+  for(firm_size in c("small","large")){
+
+   if(link_type){
+    naive_total = sum(pairs[(pairs$blocking_criterion & (pairs$dice_sim >= sim_threshold[t]) & pairs$pref_kode==code & pairs$exp_size==firm_size),]$value)
+   } else {
+    naive_total = sum(pairs[(pairs$det_link & pairs$pref_kode==code & pairs$exp_size==firm_size),]$value)
+   }
+
+   correction = sum(pairs[(pairs$blocking_criterion & pairs$pref_kode==code & pairs$exp_size==firm_size),]$value)
+   corrected_total =(naive_total - actual_fpr*correction)/(actual_recall-actual_fpr)
+   
+
+   chunk_id   = c(chunk_id,chunk_number) 
+   stat_desc  = c(stat_desc,paste('naive total for Dice with threshold=',sim_threshold[t],', exp_size=',firm_size,' and pref_kode=',code))
+   stat_value = c(stat_value,naive_total)
+
+   chunk_id   = c(chunk_id,chunk_number) 
+   stat_desc  = c(stat_desc,paste('corrected total based on estimated error rates for Dice with threshold=',sim_threshold[t],',exp_size=',
+                firm_size,' and pref_kode=',code))
+   stat_value = c(stat_value,corrected_total)
+  }
+ }
+
+ }
+}
+
+results_df = data.frame(chunk_id,stat_desc,stat_value)
+write.csv(results_df,'results.csv')
