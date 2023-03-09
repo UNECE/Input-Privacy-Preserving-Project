@@ -87,8 +87,14 @@ To run a complete demo, open three separate terminal windows; for party 1, party
 - Linker: when parties are finished querying, press Ctrl-C to return to prompt
 
 
+# Private Set Intersection with Typos
+
+When the linkage variables are not unique or have typos, linkage errors may occur including false positives and false negatives, where a false positive is linking records from different units and a false negative is not linking records from the same unit. These errors mean that a unit may be errouneously included in the intersection or omitted from this intersection. They also mean that there may be some bias in a total derived from the obtained intersection. To deal with these errors, the protocol has been modified to estimate the linkage errors with a statistical model and to adjust for these errors when computing a total based on the intersection. See `psi_protocol_for_typos_notes.pdf` and the Readme file within the folder `Code/PSI_WITH_TYPOS` for further details on the protocol and the code, which is also available in the same folder.
 
 
+# Simulations
+
+Simulations were conducted to evaluate the modified protocol with typos, when performing exact comparisons of the linkage variables and when using Bloom filters. These simulations were conducted in R using the program `simulations.txt` in the folder `Code/SIMULATIONS`.
 
 
 

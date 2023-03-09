@@ -1,0 +1,187 @@
+#--------------------------------------------------------#
+# Error model
+#--------------------------------------------------------#
+
+#======================================================#
+# Compute the log-likelihood
+# alpha_p_params=(alpha_2*(1-p_2),...,alpha_G*(1-p_G),
+#           alpha_1*p_1,...,alpha_G*p_G)
+# lambda_params=(lambda_1,...,lambda_G)
+#------------------------------------------------------#
+
+ll_func<-function(all_params,in_freq_mat,in_num_classes,clip_option,clip_threshold){
+  epsilon = 1e-12
+  if(in_num_classes==1){
+    p<-all_params[1]
+    lambdas<-all_params[2]
+    c_params<-c(1-p,p,lambdas)
+  }
+  else {
+    alphas<-c(1-sum(all_params[1:(in_num_classes-1)]),all_params[1:(in_num_classes-1)])
+    p<-all_params[in_num_classes]
+    lambdas<-all_params[(in_num_classes+1):(2*in_num_classes)]
+    c_params<-c((1-p)*alphas,p*alphas,lambdas)
+  }
+  
+  in_params<-matrix(c_params,in_num_classes,3)
+  
+  positive_n_i<-in_freq_mat[1,(in_freq_mat[1,]>0)]
+  positive_n_i_minus_one<-positive_n_i-rep(1,length(positive_n_i))
+  
+  for(g in c(1:in_num_classes)){
+    
+    alpha_q_g<-in_params[g,1]
+    alpha_p_g<-in_params[g,2]
+    lambda_g<-in_params[g,3]
+    
+    if(g==1){
+      like_n_i_eq_0<-alpha_q_g*exp(-lambda_g)
+      like_n_i_gt_0<-alpha_q_g*dpois(positive_n_i,lambda_g)
+      clip_threshold_cdf<-alpha_q_g*(1-ppois(clip_threshold-1,lambda_g))
+    }
+    else {
+      like_n_i_eq_0<-like_n_i_eq_0+alpha_q_g*exp(-lambda_g)
+      like_n_i_gt_0<-like_n_i_gt_0+alpha_q_g*dpois(positive_n_i,lambda_g)+epsilon
+      clip_threshold_cdf<-clip_threshold_cdf+alpha_q_g*(1-ppois(clip_threshold-1,lambda_g))
+    }
+    like_n_i_gt_0<-like_n_i_gt_0+alpha_p_g*dpois(positive_n_i_minus_one,lambda_g)+epsilon
+    clip_threshold_cdf<-clip_threshold_cdf+alpha_p_g*(1-ppois(clip_threshold-2,lambda_g))+epsilon
+  }
+  
+  num_positive_n_i<-length(positive_n_i)
+  if(clip_option==1){
+    like_n_i_gt_0<-(positive_n_i<clip_threshold)*like_n_i_gt_0+(positive_n_i>=clip_threshold)*rep(clip_threshold_cdf,num_positive_n_i)  
+  } 
+  
+  loglike<-0
+  
+  if(sum(in_freq_mat[2,(in_freq_mat[1,]==0)])>0){
+    loglike<-in_freq_mat[2,(in_freq_mat[1,]==0)]*log(like_n_i_eq_0)
+  }
+  
+  if(sum(in_freq_mat[2,(in_freq_mat[1,]>0)])>0){
+    loglike<-loglike+sum(in_freq_mat[2,(in_freq_mat[1,]>0)]*log(like_n_i_gt_0))
+  }
+  
+  return(loglike)
+}
+
+#================================================#
+# Maximize the log-likelihood
+#------------------------------------------------#
+
+max_loglike_func_2<-function(init_params,in_freq_mat,in_num_classes, clip_option, clip_threshold){
+  
+  #-----------------------#
+  # Constraints
+  #-----------------------#
+  
+  if(in_num_classes>1){
+    pad_alpha<-matrix(rep(0,in_num_classes*(in_num_classes+1)),in_num_classes,in_num_classes+1)
+    ui_alpha<-cbind(rbind(diag(rep(1,in_num_classes-1)),rep(-1,in_num_classes-1)),pad_alpha)
+    ci_alpha<-matrix(c(rep(0,in_num_classes-1),-1.0),in_num_classes,1)
+    
+    pad_p_1<-matrix(rep(0,2*(in_num_classes-1)),2,in_num_classes-1)
+    pad_p_2<-matrix(rep(0,2*in_num_classes),2,in_num_classes)
+    ui_p<-cbind(pad_p_1,matrix(c(1,-1),2,1),pad_p_2)
+    ci_p<-matrix(c(0,-1),2,1)
+    
+    pad_lambda<-matrix(rep(0,in_num_classes*in_num_classes),in_num_classes,in_num_classes)
+    ui_lambda<-cbind(pad_lambda,diag(rep(1,in_num_classes)))
+    ci_lambda<-matrix(rep(0,in_num_classes),in_num_classes,1)
+    
+    ui<-rbind(ui_alpha,ui_p,ui_lambda)
+    ci<-rbind(ci_alpha,ci_p,ci_lambda)
+  }
+  else {
+    pad_p<-matrix(rep(0,2*in_num_classes),2,in_num_classes)
+    ui_p<-cbind(matrix(c(1,-1),2,1),pad_p)
+    ci_p<-matrix(c(0,-1),2,1)
+    
+    pad_lambda<-matrix(rep(0,in_num_classes),in_num_classes,1)
+    ui_lambda<-cbind(pad_lambda,diag(rep(1,in_num_classes)))
+    ci_lambda<-matrix(rep(0,in_num_classes),in_num_classes,1)
+    
+    ui<-rbind(ui_p,ui_lambda)
+    ci<-rbind(ci_p,ci_lambda)
+  }
+  
+  #-----------------------#
+  # Call constrOptim()
+  #-----------------------#
+  result<-constrOptim(init_params, ll_func, grad=NULL, ui, ci, in_freq_mat=in_freq_mat, in_num_classes=in_num_classes, clip_option=clip_option, clip_threshold=clip_threshold, method=c("Nelder-Mead"), control=list(fnscale=-1), outer.eps=1e-8)
+  mles<-result$par
+  convergence<-result$convergence
+  
+  if(in_num_classes==1){
+    alphas<-1
+    ps<-mles[1]
+    lambdas<-mles[2] 
+  }
+  else {
+    alphas<-c(1-sum(mles[1:(in_num_classes-1)]),mles[1:(in_num_classes-1)])
+    ps<-mles[in_num_classes]
+    lambdas<-mles[(in_num_classes+1):(2*in_num_classes)]
+  }
+  
+  aic<-2*in_num_classes-2*result$value
+  
+  return(list(alphas=alphas, ps=ps, lambdas=lambdas,convergence=convergence,aic=aic))
+}
+
+#========================================#
+# MLE where G is based on the minimum
+# AIC
+#----------------------------------------#
+
+mle_aic<-function(ni_freqs){
+
+  max_lambda<-1.0
+  num_classes<-1
+  previous_aic<-Inf
+  
+  aic_met<-0
+  
+  while(num_classes<=2 | aic_met==0){
+   
+      if(num_classes==1){
+        init_params<-c(1/2,max_lambda/2)
+      }
+      else {
+        init_params<-c(rep(1,(num_classes-1))/num_classes,1/2,(max_lambda/(1+num_classes))*c(1:num_classes))
+      }
+    
+    result<-max_loglike_func_2(init_params=init_params,in_freq_mat=ni_freqs,in_num_classes=num_classes, clip_option=1, clip_threshold=10)
+    convergence_status<-result$convergence
+    aic<-result$aic
+    
+    overall_p<-sum(result$alphas*result$ps)
+    overall_lambda<-sum(result$alphas*result$lambdas)
+    
+    recall<-overall_p
+    precision<-overall_p/(overall_p+overall_lambda)
+    
+    if(aic_met==0 & aic>previous_aic){
+      aic_met<-1
+    }
+    else {
+      previous_aic<-aic
+      previous_recall<-recall
+      previous_precision<-precision
+      previous_convergence_status<-convergence_status
+    }
+    
+    num_classes<-num_classes+1
+  }
+  
+  results<-list(overall_p=overall_p,overall_lambda=overall_lambda,recall=recall,precision=precision,convergence=convergence_status,result=result,num_classes=num_classes-1)
+  return(results)
+}
+
+estimate_rates = function(){
+
+ ni_freqs = t(as.matrix(read.csv('ni_freqs.csv',skip=1,header=F,sep=",")))
+ results  = mle_aic(ni_freqs)
+ return(c(results$overall_p,results$overall_lambda))
+
+}
